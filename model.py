@@ -87,3 +87,45 @@ class Blocks(nn.Module):
         x = x + self.sa(self.layernorm1(x))
         x = x + self.mlp(self.layernorm2(x))
         return x
+    
+
+class LLM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.token_emb = nn.Embedding(vocab_size, n_emdb)
+        self.posembeddings = nn.Embedding(block_size, n_emdb) # Size of the sequance of tokes vs hidden layers size so 256 tokens by hidden layer
+        self.blocks = nn.Sequential(*[Blocks(n_emdb, n_heads) for _ in range(num_layers)])
+        self.output = nn.Linear(n_emdb, vocab_size)
+    
+    def forward(self, x, y=None):
+        B, T = x.shape
+        tok_emb = self.token_emb(x)
+        pos_emb = self.posembeddings(torch.arange(T, device=device))
+        n_x = tok_emb + pos_emb
+        x = self.blocks(n_x)
+
+        logits = self.output(x)
+
+        if y == None:
+            loss = None
+        else:
+            B, T, C = logits.shape
+            print(B, T, C)
+            logits = logits.view(B*T, C) # make it 2D from 3D
+            target = y.view(B*T)
+            loss = F.cross_entropy(logits, target)
+
+        return logits, loss
+
+    def generate(self, start_x, max_length=1000):
+        for _ in range(max_length):
+            idx = start_x[:, -block_size:]
+            logits, loss = self(idx)
+            logits = logits[:, -1, :]
+            prob = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(prob, num_samples=1)
+            idx = torch.concat((start_x, idx_next), dim=1)
+            # add someway to look for end of sentence chars
+        return idx
+
+model = LLM().to(device)
