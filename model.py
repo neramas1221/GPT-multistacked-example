@@ -129,3 +129,11 @@ class LLM(nn.Module):
         return idx
 
 model = LLM().to(device)
+
+#### JUST FOR TESTING NEED TO ADD REAL DATA ####
+x = torch.randint(0,256,(4, 256))
+y = torch.randint(0,256,(4, 256))
+
+logits, loss = model(x.to(device),y.to(device))[0]
+
+print(logits.size)
