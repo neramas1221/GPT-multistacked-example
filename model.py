@@ -58,3 +58,19 @@ class MultiHeadAttention(nn.Module):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.projection(out))
         return out
+    
+
+class MLP(nn.Module):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size*4),
+            nn.ELU(),
+            nn.Linear(hidden_size * 4, hidden_size),
+            nn.Dropout(dropout)
+            )
+    
+    def forward(self, x):
+        return self.mlp(x)
+    
+
