@@ -25,4 +25,23 @@ vocab_size = 2000
 num_layers = 6 # Number of decoders to make
 
 
+class Head(nn.Module):
+    def __init__(self, n_emdb, hidden_size, block_size):
+        super().__init__()
+        self.key = nn.Linear(n_emdb, hidden_size)
+        self.query = nn.Linear(n_emdb, hidden_size)
+        self.value = nn.Linear(n_emdb, hidden_size)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+        self.dropout = nn.Dropout(dropout)
 
+    def forward(self, x):
+        B,T,C = x.shape
+
+        k = self.key(x)
+        q = self.value(x)
+        weights = q @ k.transpose(-2, -1) * C **-0.5
+        weights = weights.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+        weights = F.softmax(weights, dim=-1) # B, T, T
+        weights = self.dropout(weights)
+        v = self.value(x)
+        return weights @ v
