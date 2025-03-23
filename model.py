@@ -81,7 +81,18 @@ class Head(nn.Module):
         # representation of the input tokens
         weights = q @ k.transpose(-2, -1) * C **-0.5
         # Mask the weights so only the current token and the value before it can be used
-        weights = weights.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+        casual_mask = self.tril[:T, :T].view(1,T, T)
+        # If we are masking padding tokens
+        if mask is not None:
+            # Resize the mask to be in B, 1, T
+            padding_mask = mask.view(B,1,T)
+            # combined the masks, this will result in the casual mask getting updated to have the position of the padding tokens that need to be ignored
+            combined_mask = casual_mask + padding_mask
+        else:
+            combined_mask = casual_mask
+        # Mask the weights so only the current token and the value before it can be used and any padding tokens are removed from the sequance,
+        # This is done as we dont want the model to learn about and pay attention to these tokens as there not gonna be used in the model.
+        weights = weights.masked_fill(combined_mask == 0, float("-inf"))
         # convert the weights into softmax to repressent what tokens to be atteneded to any by how much
         weights = F.softmax(weights, dim=-1) # B, T, T
         # apply dropout
@@ -361,6 +372,12 @@ model = LLM().to(device)
 x = torch.randint(0,256,(4, 256))
 y = torch.randint(0,256,(4, 256))
 
-logits, loss = model(x.to(device),y.to(device))[0]
+mask = torch.zeros(4, 256, dtype=torch.bool)
+mask[:, 250:] = True
 
-print(logits.size)
+logits, loss = model(x.to(device),y.to(device))
+
+print(logits.size())
+mask = None
+x = torch.ones((1,1), device=device, dtype=torch.long)
+print(model.generate(x, 100))
