@@ -351,7 +351,7 @@ class LLM(nn.Module):
             # select the best token
             idx_next = torch.multinomial(prob, num_samples=1)
             # add the new token to the sequance
-            idx = torch.concat((idx, idx_next), dim=1)
+            start_x = torch.concat((start_x, idx_next), dim=1)
             # add someway to look for end of sentence chars
         return idx
 
