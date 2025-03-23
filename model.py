@@ -61,22 +61,35 @@ class Head(nn.Module):
     """
     def __init__(self, n_emdb, hidden_size, block_size):
         super().__init__()
+        # Linear layer is needed for each of the 3 elements K, Q, V
         self.key = nn.Linear(n_emdb, hidden_size)
         self.query = nn.Linear(n_emdb, hidden_size)
         self.value = nn.Linear(n_emdb, hidden_size)
+        # This is used to store the tril function from torch which will make a lower trangler matrix of the block size, so if my block size is 16 
+        # This will create a 16 x 16 matrix with ones representing a mask of what tokens the model can use.
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         B,T,C = x.shape
-
+        # compute the projection of the key value
         k = self.key(x)
+        # compute the projection of the query values
         q = self.value(x)
+        # the weights are computed using the dot product of q.k however k needs to be resized due to them both being in B, T, C format
+        # so need to convert it to be B, C, T format, then the model is multiplies by the square root of the embedding output which is the semantic
+        # representation of the input tokens
         weights = q @ k.transpose(-2, -1) * C **-0.5
+        # Mask the weights so only the current token and the value before it can be used
         weights = weights.masked_fill(self.tril[:T, :T] == 0, float("-inf"))
+        # convert the weights into softmax to repressent what tokens to be atteneded to any by how much
         weights = F.softmax(weights, dim=-1) # B, T, T
+        # apply dropout
         weights = self.dropout(weights)
+        # get the projection for the values
         v = self.value(x)
+        # perform the dot poduct of the weigth and v to get the weighted sum of the values, the weights show the relarelationship between the keys and the values
+        # this will result in emphasing the most relevent values.
         return weights @ v
     
 
@@ -116,11 +129,20 @@ class MultiHeadAttention(nn.Module):
     """
     def __init__(self, n_head, head_size):
         super().__init__()
+        # Create a number of heads to be used in the attention layer these heads will be used to learn information about the input
+        # this means increasing the heads will increase the amount of information the model can learn but increases training time#
+        # each head will learn something e.g. one will learn how nouns and adjectives are related, other will learn what the subject 
+        # and objects are in the sentance. However the heads will return there outputs in the size of head_size which is n_emdb // n_heads
+        # this means that increaing the number of heads in the model too much will result in the information learned by the model being small
+        # and resulting in the heads not capturing a meaningful amount of information this can be fixed by increasing the size of n_emdb 
         self.heads = nn.ModuleList([Head(n_emdb, head_size, block_size) for _ in range(n_head)])
+        # Learn about the outputs from the attention heads
         self.projection = nn.Linear(n_emdb, n_emdb)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
+        # Concat the reuslts from the heads back to the original size as the outputs are in the size B, T, head_size so concating them will result
+        # in size B T C (head_size * n_heads) = C
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         out = self.dropout(self.projection(out))
         return out
@@ -159,6 +181,8 @@ class MLP(nn.Module):
     """
     def __init__(self, hidden_size):
         super().__init__()
+        # create a sequential feed forward model that will be used to process the output of the multi headed attention blocks
+        # the mlp has its sizes increased here to allow it to learn and understand more information
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size*4),
             nn.ELU(),
@@ -203,9 +227,12 @@ class Blocks(nn.Module):
     """
     def __init__(self, n_embd, n_heads):
         super().__init__()
+        # Here we want to crate the blocks that will be used in the LLM the blocks have the format of the attention block, the feed forward nn
+        # and then 2 layer normalises
         head_size = n_emdb // n_heads
         self.sa = MultiHeadAttention(n_heads, head_size)
         self.mlp = MLP(n_embd)
+        # These layernorms are used to incrase performance and computaion time, also help to solve the vanashin/exploding gradiant problem
         self.layernorm1 = nn.LayerNorm(n_embd)
         self.layernorm2 = nn.LayerNorm(n_embd)
 
@@ -275,38 +302,55 @@ class LLM(nn.Module):
     """
     def __init__(self):
         super().__init__()
+        # Create the embedding dimentions for the model this is always the vocab size by the number of hidden layers
         self.token_emb = nn.Embedding(vocab_size, n_emdb)
-        self.posembeddings = nn.Embedding(block_size, n_emdb) # Size of the sequance of tokes vs hidden layers size so 256 tokens by hidden layer
+        # Size of the sequance of tokes vs hidden layers size so 256 tokens by hidden layer
+        self.posembeddings = nn.Embedding(block_size, n_emdb) 
+        # Create the blocks for the transformer models
         self.blocks = nn.Sequential(*[Blocks(n_emdb, n_heads) for _ in range(num_layers)])
         self.output = nn.Linear(n_emdb, vocab_size)
     
     def forward(self, x, y=None):
         B, T = x.shape
+        # add the represntation of the vocab to the inputs to get the C dimention 
         tok_emb = self.token_emb(x)
+        # get the positional embeddings for the input in the T dimention
         pos_emb = self.posembeddings(torch.arange(T, device=device))
+        # add the positional embedding to the model tokens
         n_x = tok_emb + pos_emb
+        # pass the input to the blocks layers
         x = self.blocks(n_x)
-
+        # compute the logits from the output
         logits = self.output(x)
-
+        # if no target set loss to none
         if y == None:
             loss = None
         else:
+            # Get the shap of the logits
             B, T, C = logits.shape
-            print(B, T, C)
+            # convert the logits to be in a 2D format
             logits = logits.view(B*T, C) # make it 2D from 3D
+            # torch only accepts the target at shape 
             target = y.view(B*T)
+            # calculate the loss
             loss = F.cross_entropy(logits, target)
-
+        # return the results
         return logits, loss
 
     def generate(self, start_x, max_length=1000):
-        for _ in range(max_length):
+        # genearte upto the max tokens
+        for _ in range(max_length):#
+            # ensures that the data is always within the maximum block size
             idx = start_x[:, -block_size:]
+            # get the logits
             logits, loss = self(idx)
+            # conver the logits in to format B, T, C in to B, C format
             logits = logits[:, -1, :]
+            # use the new logits to get a probablity of which token to select
             prob = F.softmax(logits, dim=-1)
+            # select the best token
             idx_next = torch.multinomial(prob, num_samples=1)
+            # add the new token to the sequance
             idx = torch.concat((start_x, idx_next), dim=1)
             # add someway to look for end of sentence chars
         return idx
