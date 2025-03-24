@@ -85,7 +85,7 @@ class Head(nn.Module):
         # If we are masking padding tokens
         if mask is not None:
             # Resize the mask to be in B, 1, T
-            padding_mask = mask.view(B,1,T)
+            padding_mask = mask.view(B,1,T).to(device)
             # combined the masks, this will result in the casual mask getting updated to have the position of the padding tokens that need to be ignored
             combined_mask = casual_mask + padding_mask
         else:
