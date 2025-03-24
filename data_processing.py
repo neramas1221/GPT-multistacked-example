@@ -78,3 +78,19 @@ def custom_tokenizer(text):
         tokens.extend(korean_tokens)
     
     return tokens
+
+
+def build_vocab(tokens_list):
+    # Get all unique tokens
+    unique_tokens = set(tokens_list)
+    
+    # Assign a unique integer ID to each token
+    vocab = {token: idx for idx, token in enumerate(unique_tokens, start=4)}  # Start at 4 (0 for padding, 1 for unkown, 2 for start of sentence, 3 for end)
+    
+    # Add a special token for unknown words (optional)
+    vocab["<PAD>"] = 0
+    vocab["<UNK>"] = 1
+    vocab["<STA>"] = 2
+    vocab["<END>"] = 3
+    
+    return vocab
