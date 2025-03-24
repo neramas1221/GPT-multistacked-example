@@ -3,6 +3,8 @@ import pandas as pd
 from glob import glob
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import re
+from konlpy.tag import Kkma
 
 
 class WikiData(Dataset):
@@ -62,4 +64,17 @@ class WikiData(Dataset):
         return next(iter(self.master_data_set))
 
 
-data = WikiData()
+def custom_tokenizer(text):
+    tokens = []
+    kkma = Kkma()
+    # Split text into sentences based on punctuation (optional, for cleaner input)
+    sentences = re.split(r'[.!?]', text)
+    
+    for sentence in sentences:
+        # Tokenize Korean words using Okt
+        korean_tokens = kkma.morphs(sentence)
+        
+        # Combine Korean and English tokens
+        tokens.extend(korean_tokens)
+    
+    return tokens
