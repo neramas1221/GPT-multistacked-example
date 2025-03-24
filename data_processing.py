@@ -94,3 +94,39 @@ def build_vocab(tokens_list):
     vocab["<END>"] = 3
     
     return vocab
+
+
+def convert_text(vocab, text, max_length=0):
+    tokens = custom_tokenizer(text)
+    t = [vocab["<STA>"]]
+    t += [vocab.get(token, vocab["<UNK>"]) for token in tokens]
+    if max_length == 0:
+        t.append(vocab["<END>"])
+        return t
+    
+    elif len(t) < max_length:
+        t.append(vocab["<END>"])
+        t += [vocab["<PAD>"] for _ in range(max_length-len(t))]
+        return t
+    
+    elif len(t) > max_length:
+        t = t[:max_length]
+        t[-1] = vocab["<END>"]
+        return t
+    
+    elif len(t) == max_length:
+        t[-1] = vocab["<END>"]
+        return t
+
+
+text = "Hello 안녕하세요! How are you 오늘 날씨 좋네요."
+
+tokens = custom_tokenizer(text)
+
+vocab = build_vocab(tokens)
+print(len(tokens))
+print(vocab)
+
+print(convert_text(vocab, text))
+print(convert_text(vocab, text, max_length=13))
+print(convert_text(vocab, text, max_length=3))
