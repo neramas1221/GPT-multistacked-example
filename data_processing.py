@@ -4,7 +4,6 @@ from glob import glob
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import re
-from konlpy.tag import Kkma
 
 
 class WikiData(Dataset):
@@ -22,25 +21,25 @@ class WikiData(Dataset):
 
                 for i, val in enumerate(data_set_en):
                     examples.append([val["title"], val["text"], "eng"])
-                    if i % 10000 ==0 and i !=0:
+                    if i % 500 ==0 and i !=0:
                         print(f"Number of examples: {i}")
                         df = pd.DataFrame(examples, columns=["Title", "Text", "Lang"])
-                        df.to_csv(f"data/wiki_examples_eng_{int((i/10000))}.csv")
+                        df.to_csv(f"data/wiki_examples_eng_{int((i/500))}.csv")
                         examples = [] 
                     if i > max_amount:
                         break
 
-                examples = []
+                # examples = []
 
-                for i, val in enumerate(data_set_kr):
-                    examples.append([val["title"], val["text"], "kor"])
-                    if i % 10000 ==0:
-                        print(f"Number of examples: {i}")
-                        df = pd.DataFrame(examples, columns=["Title", "Text", "Lang"])
-                        df.to_csv(f"data/wiki_examples_kor_{int((i/10000))}.csv")
-                        examples = []
-                    if i > max_amount:
-                        break
+                # for i, val in enumerate(data_set_kr):
+                #     examples.append([val["title"], val["text"], "kor"])
+                #     if i % 10000 ==0:
+                #         print(f"Number of examples: {i}")
+                #         df = pd.DataFrame(examples, columns=["Title", "Text", "Lang"])
+                #         df.to_csv(f"data/wiki_examples_kor_{int((i/10000))}.csv")
+                #         examples = []
+                #     if i > max_amount:
+                #         break
             data_frames = []
             for f in tqdm(glob("data/*.csv")):
                 data_frames.append(pd.read_csv(f))
@@ -60,24 +59,8 @@ class WikiData(Dataset):
 
     def __getitem__(self, idx):
         if type(self.master_data_set) == pd.DataFrame:
-            return self.master_data_set.loc[idx]
+            return self.master_data_set.iloc[idx]
         return next(iter(self.master_data_set))
-
-
-def custom_tokenizer(text):
-    tokens = []
-    kkma = Kkma()
-    # Split text into sentences based on punctuation (optional, for cleaner input)
-    sentences = re.split(r'[.!?]', text)
-    
-    for sentence in sentences:
-        # Tokenize Korean words using Okt
-        korean_tokens = kkma.morphs(sentence)
-        
-        # Combine Korean and English tokens
-        tokens.extend(korean_tokens)
-    
-    return tokens
 
 
 def build_vocab(tokens_list):
@@ -91,13 +74,13 @@ def build_vocab(tokens_list):
     vocab["<PAD>"] = 0
     vocab["<UNK>"] = 1
     vocab["<STA>"] = 2
-    vocab["<END>"] = 3
+    vocab["<END>"] = 3 
     
     return vocab
 
 
-def convert_text(vocab, text, max_length=0):
-    tokens = custom_tokenizer(text)
+def encode(vocab, text, max_length=0):
+    tokens = clean_text(text)
     t = [vocab["<STA>"]]
     t += [vocab.get(token, vocab["<UNK>"]) for token in tokens]
     if max_length == 0:
@@ -119,14 +102,26 @@ def convert_text(vocab, text, max_length=0):
         return t
 
 
-text = "Hello 안녕하세요! How are you 오늘 날씨 좋네요."
+def clean_text(text):
+    # Define regex pattern to keep only Korean and English words
+    pattern = r"[^\w\s'가-힣a-zA-Z]"
+    # Remove unwanted characters using regex
+    cleaned_text = re.sub(pattern, " ", text)
+    # Convert to lowercase
+    cleaned_text = cleaned_text.lower()
+    # Remove extra whitespace and newlines
+    cleaned_text = cleaned_text.strip()
+    # Split text into words
+    words = cleaned_text.split()
+    return words
 
-tokens = custom_tokenizer(text)
 
-vocab = build_vocab(tokens)
-print(len(tokens))
-print(vocab)
+def create_vocab(data):
+    for i, vals in tqdm(enumerate(data)):
+        clean_text_set = set(clean_text(vals["Text"]))
+        total_vals |= clean_text_set
+        if i % 1000 == 0:
+            print("\n")
+            print(len(total_vals))
 
-print(convert_text(vocab, text))
-print(convert_text(vocab, text, max_length=13))
-print(convert_text(vocab, text, max_length=3))
+    return total_vals
