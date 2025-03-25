@@ -63,7 +63,7 @@ class WikiData(Dataset):
         return next(iter(self.master_data_set))
 
 
-def build_vocab(tokens_list):
+def build_encoder(tokens_list):
     # Get all unique tokens
     unique_tokens = set(tokens_list)
     
@@ -102,6 +102,13 @@ def encode(vocab, text, max_length=0):
         return t
 
 
+def decoder(encoder, input):
+    decoded_vals = []
+    for tar in input:
+        decoded_vals.extend([key for key, val in encoder.items() if val == tar])
+    return " ".join(decoded_vals)
+
+
 def clean_text(text):
     # Define regex pattern to keep only Korean and English words
     pattern = r"[^\w\s'가-힣a-zA-Z]"
@@ -117,6 +124,7 @@ def clean_text(text):
 
 
 def create_vocab(data):
+    total_vals = set()
     for i, vals in tqdm(enumerate(data)):
         clean_text_set = set(clean_text(vals["Text"]))
         total_vals |= clean_text_set
