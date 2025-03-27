@@ -19,7 +19,7 @@ class WikiData(Dataset):
 
                 examples = []
 
-                for i, val in enumerate(data_set_en):
+                for i, val in enumerate(data_set_en.shuffle()):
                     examples.append([val["title"], val["text"], "eng"])
                     if i % 500 ==0 and i !=0:
                         print(f"Number of examples: {i}")
