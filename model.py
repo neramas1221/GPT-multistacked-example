@@ -10,10 +10,17 @@ import torch.nn as nn
 from torch.nn import functional as F
 import matplotlib.pyplot as plt
 import numpy as np
+import torch.optim as op
+import data_processing as dp
+from tqdm import tqdm, trange
 
 GPU = 0
 # Check what device we are working on, if cuda and GPU is available we will use those
 device = torch.device(GPU if torch.cuda.is_available() else 'cpu')
+
+data = dp.WikiData()
+vocab = dp.create_vocab(data)
+vocab = dp.build_encoder(vocab)
 
 # Veriables
 block_size = 256
@@ -21,8 +28,12 @@ dropout = 0.1
 n_heads = 6 # Number of attention heads
 n_emdb = 384 # number of hidden layers
 head_size = n_emdb // n_heads
-vocab_size = 2000
+vocab_size = len(vocab)
 num_layers = 6 # Number of decoders to make
+epoches = 100
+batch_size = 8
+learning_rate = 3e-4
+
 
 # Creates the attention heads for use in multi headed attention this
 class Head(nn.Module):
@@ -87,7 +98,7 @@ class Head(nn.Module):
             # Resize the mask to be in B, 1, T
             padding_mask = mask.view(B,1,T).to(device)
             # combined the masks, this will result in the casual mask getting updated to have the position of the padding tokens that need to be ignored
-            combined_mask = casual_mask + padding_mask
+            combined_mask = casual_mask * padding_mask
         else:
             combined_mask = casual_mask
         # Mask the weights so only the current token and the value before it can be used and any padding tokens are removed from the sequance,
@@ -344,7 +355,8 @@ class LLM(nn.Module):
             # torch only accepts the target at shape 
             target = y.view(B*T)
             # calculate the loss
-            loss = F.cross_entropy(logits, target)
+            # loss = F.cross_entropy(logits, target)
+            loss = (F.cross_entropy(logits, target) * mask).sum()/mask.sum()
         # return the results
         return logits, loss
 
@@ -368,16 +380,71 @@ class LLM(nn.Module):
 
 model = LLM().to(device)
 
-#### JUST FOR TESTING NEED TO ADD REAL DATA ####
-x = torch.randint(0,256,(4, 256))
-y = torch.randint(0,256,(4, 256))
 
-mask = torch.zeros(4, 256, dtype=torch.bool)
-mask[:, 250:] = True
+def get_batch():
+    ix = torch.randint(len(data), (batch_size,))
+    x = []
+    y = []
+    for i in ix:
+        if len(data.master_data_set.iloc[int(i)]["Text"].split()) > block_size:
+            starting_point =  int(torch.randint(len(data.master_data_set.iloc[int(i)]["Text"].split()) - block_size, (1,)))
+            x.append(" ".join(data.master_data_set.iloc[int(i)]["Text"].split()[starting_point:starting_point+block_size]))
+            y.append(" ".join(data.master_data_set.iloc[int(i)]["Text"].split()[starting_point+1:starting_point+1+block_size]))
+        else:
+            x.append(" ".join(data.master_data_set.iloc[int(i)]["Text"].split()[:-1]))
+            y.append(" ".join(data.master_data_set.iloc[int(i)]["Text"].split()[1:]))
 
-logits, loss = model(x.to(device),y.to(device))
+    return x, y
 
-print(logits.size())
-mask = None
-x = torch.ones((1,1), device=device, dtype=torch.long)
-print(model.generate(x, 100))
+
+def create_padding_mask(x):
+    if 0 in x:
+        idx = x.index(0)
+        mask = torch.ones(1, block_size, dtype=torch.bool)
+        mask[:, idx:] = 0
+        return mask
+    return torch.ones(1, block_size, dtype=torch.bool)
+
+optimizer = op.AdamW(params=model.parameters(), lr=learning_rate)
+
+loss_lst = []
+# Set very high so the models lose will be in theory be lower
+previous_loss = 10
+
+for epch in trange(epoches, desc="Epochs"):
+    for _ in tqdm(range(data.master_data_set.shape[0]), leave=False, desc="Training"):
+        x, y = get_batch()
+
+        for i in range(len(x)):
+            x[i] = dp.clean_text(x[i])
+            y[i] = dp.clean_text(y[i])
+
+        masks = []
+        new_x = []
+        new_y = []
+        for i in range(len(x)):
+            new_x.append(torch.Tensor(dp.encode(vocab, x[i], max_length=block_size)))
+            masks.append(create_padding_mask(x[i]))
+            new_y.append(torch.Tensor(dp.encode(vocab, y[i], max_length=block_size)))
+        # print(x[0])
+        # print(dp.decoder(vocab, new_x[0].tolist()))
+        mask = torch.concat(masks).to(device)
+        
+        x_new_tensor = torch.stack(new_x, dim=0)
+        y_new_tensor = torch.stack(new_y, dim=0)
+        
+        logits, loss = model(x_new_tensor.long().to(device), y_new_tensor.long().to(device))
+
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+        loss_lst.append(loss.item())
+    if epch % 5 == 0:
+        print(f"Epoch {epch}, Total Training Loss: {loss.item()}" )
+    if loss.item() < previous_loss:
+        torch.save({'epoch': epch + 1,
+            'data_logger': loss_lst,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+                }, "qa_model.pt")
+        
