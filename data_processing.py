@@ -80,7 +80,7 @@ def build_encoder(tokens_list):
 
 
 def encode(vocab, text, max_length=0):
-    tokens = clean_text(text)
+    tokens = text
     t = [vocab["<STA>"]]
     t += [vocab.get(token, vocab["<UNK>"]) for token in tokens]
     if max_length == 0:
@@ -104,7 +104,7 @@ def encode(vocab, text, max_length=0):
 
 def decoder(encoder, input):
     decoded_vals = []
-    for tar in input:
+    for tar in tqdm(input):
         decoded_vals.extend([key for key, val in encoder.items() if val == tar])
     return " ".join(decoded_vals)
 
