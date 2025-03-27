@@ -426,8 +426,7 @@ for epch in trange(epoches, desc="Epochs"):
             new_x.append(torch.Tensor(dp.encode(vocab, x[i], max_length=block_size)))
             masks.append(create_padding_mask(x[i]))
             new_y.append(torch.Tensor(dp.encode(vocab, y[i], max_length=block_size)))
-        # print(x[0])
-        # print(dp.decoder(vocab, new_x[0].tolist()))
+
         mask = torch.concat(masks).to(device)
         
         x_new_tensor = torch.stack(new_x, dim=0)
