@@ -21,6 +21,7 @@ device = torch.device(GPU if torch.cuda.is_available() else 'cpu')
 data = dp.WikiData()
 vocab = dp.create_vocab(data)
 vocab = dp.build_encoder(vocab)
+inverse_vocab = {v: k for k, v in vocab.items()}
 
 # Veriables
 block_size = 256
@@ -362,7 +363,7 @@ class LLM(nn.Module):
 
     def generate(self, start_x, max_length=1000):
         # genearte upto the max tokens
-        for _ in range(max_length):#
+        for _ in range(max_length):
             # ensures that the data is always within the maximum block size
             idx = start_x[:, -block_size:]
             # get the logits
@@ -376,7 +377,9 @@ class LLM(nn.Module):
             # add the new token to the sequance
             start_x = torch.concat((start_x, idx_next), dim=1)
             # add someway to look for end of sentence chars
-        return idx
+            if idx_next.tolist() == 3:
+                break
+        return start_x
 
 model = LLM().to(device)
 
@@ -406,6 +409,7 @@ def create_padding_mask(x):
     return torch.ones(1, block_size, dtype=torch.bool)
 
 optimizer = op.AdamW(params=model.parameters(), lr=learning_rate)
+scailer = torch.cuda.amp.GradScaler()
 
 loss_lst = []
 # Set very high so the models lose will be in theory be lower
@@ -431,19 +435,29 @@ for epch in trange(epoches, desc="Epochs"):
         
         x_new_tensor = torch.stack(new_x, dim=0)
         y_new_tensor = torch.stack(new_y, dim=0)
-        
-        logits, loss = model(x_new_tensor.long().to(device), y_new_tensor.long().to(device))
+
+        with torch.cuda.amp.autocast():
+            logits, loss = model(x_new_tensor.long().to(device), y_new_tensor.long().to(device))
 
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+        scailer.scale(loss).backward()
+        scailer.step(optimizer)
+        scailer.update()
+
         loss_lst.append(loss.item())
+
     if epch % 5 == 0:
-        print(f"Epoch {epch}, Total Training Loss: {loss.item()}" )
+        print(f"Epoch {epch}, Total Training Loss: {loss.item()}")
     if loss.item() < previous_loss:
-        torch.save({'epoch': epch + 1,
-            'data_logger': loss_lst,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-                }, "qa_model.pt")
-        
+        torch.save(model.state_dict(), "gpt_mdl.pt")
+
+mask = None
+
+model.load_state_dict(torch.load("gpt_mdl.pt", weights_only=True))
+
+result = model.generate(torch.Tensor([dp.encode(vocab, ["London", "is"])]).int().to(device), max_length=1000)
+res = dp.decoder(inverse_vocab, result[0])
+print(res)
+
+plt.plot(loss_lst)
+plt.savefig("Loss.png")
