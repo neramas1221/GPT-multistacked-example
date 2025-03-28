@@ -35,6 +35,10 @@ epoches = 100
 batch_size = 8
 learning_rate = 3e-4
 
+### ticktoken encoder ###
+vocab = dp.get_tokenizer_tt()
+vocab_size = vocab.n_vocab
+
 
 # Creates the attention heads for use in multi headed attention this
 class Head(nn.Module):
@@ -377,7 +381,7 @@ class LLM(nn.Module):
             # add the new token to the sequance
             start_x = torch.concat((start_x, idx_next), dim=1)
             # add someway to look for end of sentence chars
-            if idx_next.tolist() == 3:
+            if idx_next.tolist() == 100257:
                 break
         return start_x
 
@@ -401,8 +405,8 @@ def get_batch():
 
 
 def create_padding_mask(x):
-    if 0 in x:
-        idx = x.index(0)
+    if 100278 in x:
+        idx = x.index(100278)
         mask = torch.ones(1, block_size, dtype=torch.bool)
         mask[:, idx:] = 0
         return mask
@@ -416,20 +420,27 @@ loss_lst = []
 previous_loss = 10
 
 for epch in trange(epoches, desc="Epochs"):
-    for _ in tqdm(range(data.master_data_set.shape[0]), leave=False, desc="Training"):
+    for _ in tqdm(range(1000), leave=False, desc="Training"):
         x, y = get_batch()
 
-        for i in range(len(x)):
-            x[i] = dp.clean_text(x[i])
-            y[i] = dp.clean_text(y[i])
+        # for i in range(len(x)):
+        #     x[i] = dp.clean_text(x[i])
+        #     y[i] = dp.clean_text(y[i])
 
         masks = []
         new_x = []
         new_y = []
+        
+        # for i in range(len(x)):
+        #     new_x.append(torch.Tensor(dp.encode(vocab, x[i], max_length=block_size)))
+        #     masks.append(create_padding_mask(x[i]))
+        #     new_y.append(torch.Tensor(dp.encode(vocab, y[i], max_length=block_size)))
         for i in range(len(x)):
-            new_x.append(torch.Tensor(dp.encode(vocab, x[i], max_length=block_size)))
-            masks.append(create_padding_mask(x[i]))
-            new_y.append(torch.Tensor(dp.encode(vocab, y[i], max_length=block_size)))
+            new_x.append(torch.Tensor(dp.encode_with_tt(vocab, x[i], max_length=block_size)))
+            masks.append(create_padding_mask(new_x[i].int().tolist()))
+            new_y.append(torch.Tensor(dp.encode_with_tt(vocab, y[i], max_length=block_size)))
+
+
 
         mask = torch.concat(masks).to(device)
         
@@ -445,7 +456,6 @@ for epch in trange(epoches, desc="Epochs"):
         scailer.update()
 
         loss_lst.append(loss.item())
-
     if epch % 5 == 0:
         print(f"Epoch {epch}, Total Training Loss: {loss.item()}")
     if loss.item() < previous_loss:
@@ -455,8 +465,10 @@ mask = None
 
 model.load_state_dict(torch.load("gpt_mdl.pt", weights_only=True))
 
-result = model.generate(torch.Tensor([dp.encode(vocab, ["London", "is"])]).int().to(device), max_length=1000)
-res = dp.decoder(inverse_vocab, result[0])
+enc_str = dp.encode_tick_token(vocab, "London is")
+
+result = model.generate(torch.Tensor([enc_str]).int().to(device), max_length=1000)
+res = dp.decode_tick_token(vocab, result[0])
 print(res)
 
 plt.plot(loss_lst)
