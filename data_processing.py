@@ -4,7 +4,7 @@ from glob import glob
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import re
-
+import tiktoken as tt
 
 class WikiData(Dataset):
     def __init__(self, data_set_name="wikimedia/wikipedia", data_set_chunk="20231101.en", split="train", force_download=False, max_amount=500_000, store=True):
@@ -135,3 +135,59 @@ def create_vocab(data):
             print(len(total_vals))
 
     return total_vals
+
+
+def encode_tick_token(tt_vocab, input):
+    return tt_vocab.encode(input)
+
+
+def decode_tick_token(tt_vocab, input):
+    return "".join(tt_vocab.decode(input.tolist()))
+
+
+def get_tokenizer_tt():
+    cl100k_base = tt.get_encoding("cl100k_base")
+
+    enc = tt.Encoding(
+        name="cl100k_im",
+        pat_str=cl100k_base._pat_str,
+        mergeable_ranks=cl100k_base._mergeable_ranks,
+        special_tokens={
+            **cl100k_base._special_tokens,
+            "<|pad_token|>": 100278
+        }
+    )
+    return enc
+
+
+def encode_with_tt(vocab, text, max_length=512, generate=False):
+    """
+    special tokens in ticktokenizer cl100k_base model
+    {'<|endofprompt|>',
+    '<|endoftext|>',
+    '<|fim_middle|>',
+    '<|fim_prefix|>',
+    '<|fim_suffix|>',
+    '<|pad_token|>'}
+    """
+    tokens = text
+    t = vocab.encode(tokens, allowed_special=vocab.special_tokens_set)
+    if generate:
+        return t
+    if max_length == 0:
+        t.append(100257) # end of string token
+        return t
+    
+    elif len(t) < max_length:
+        t.append(100257) # end of string token
+        t += [100278 for _ in range(max_length-len(t))] # add the padding tokens
+        return t
+    
+    elif len(t) > max_length:
+        t = t[:max_length]
+        t[-1] = 100257 # end of string token
+        return t
+    
+    elif len(t) == max_length:
+        t[-1] = 100257 # end of string token
+        return t
