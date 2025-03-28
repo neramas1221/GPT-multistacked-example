@@ -79,10 +79,12 @@ def build_encoder(tokens_list):
     return vocab
 
 
-def encode(vocab, text, max_length=0):
+def encode(vocab, text, max_length=0, generate=False):
     tokens = text
     t = [vocab["<STA>"]]
     t += [vocab.get(token, vocab["<UNK>"]) for token in tokens]
+    if generate:
+        return t
     if max_length == 0:
         t.append(vocab["<END>"])
         return t
