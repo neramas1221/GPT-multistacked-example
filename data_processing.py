@@ -105,7 +105,7 @@ def encode(vocab, text, max_length=0):
 def decoder(encoder, input):
     decoded_vals = []
     for tar in tqdm(input):
-        decoded_vals.extend([key for key, val in encoder.items() if val == tar])
+        decoded_vals.append(encoder[tar.tolist()])
     return " ".join(decoded_vals)
 
 
